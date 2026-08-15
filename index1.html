@@ -4,8 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="독서생활" />
   <title>스마트 독서 리스트 앱</title>
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -87,14 +85,13 @@
     }
 
     .btn-sync-setting {
-      background: #f8fafc;
+      background: none;
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 5px 8px;
-      font-size: 0.78rem;
+      padding: 4px 8px;
+      font-size: 0.8rem;
       cursor: pointer;
       color: var(--text-sub);
-      font-weight: 600;
     }
 
     .chart-box {
@@ -281,7 +278,7 @@
       font-size: 0.85rem;
     }
 
-    /* 모달 */
+    /* 모달 공통 */
     .modal-overlay {
       position: fixed;
       inset: 0;
@@ -398,11 +395,12 @@
 <body>
 
   <div class="app-container">
+    <!-- 상단 카드 -->
     <div class="card">
       <div class="card-header">
         <div class="card-title">📖 독서 생활</div>
         <div class="header-actions">
-          <button class="btn-sync-setting" id="syncStatusBtn" onclick="openSyncModal()">⚙️ GitHub 동기화</button>
+          <button class="btn-sync-setting" onclick="openSyncModal()">⚙️ GitHub 동기화</button>
           <div class="badge-count" id="totalBadge">총 0권</div>
         </div>
       </div>
@@ -411,15 +409,17 @@
       </div>
     </div>
 
+    <!-- 검색 카드 -->
     <div class="card">
       <div class="search-wrapper">
-        <input type="text" id="searchInput" class="search-input" placeholder="책 제목 입력..." onkeypress="if(event.key==='Enter') executeSearch();" />
+        <input type="text" id="searchInput" class="search-input" placeholder="책 제목 또는 키워드 입력..." onkeypress="if(event.key==='Enter') executeSearch();" />
         <button class="btn-search" onclick="executeSearch()">검색</button>
         <button class="btn-direct-add" onclick="openManualAddModal()">+ 직접입력</button>
         <div class="search-dropdown" id="searchDropdown"></div>
       </div>
     </div>
 
+    <!-- 목록 카드 -->
     <div class="card">
       <div class="card-header">
         <div class="card-title">독서 기록 목록</div>
@@ -487,25 +487,25 @@
     <div class="modal-content">
       <div class="modal-title">GitHub 저장소 동기화 설정</div>
       <p style="font-size:0.8rem; color:var(--text-sub); line-height:1.4;">
-        PC와 스마트폰에 동일하게 입력해 두시면 기록이 <code>books.json</code> 파일로 자동 공유됩니다.
+        설정해 두시면 PC와 스마트폰에서 기록한 내용이 GitHub 저장소의 <code>books.json</code> 파일로 자동 동기화됩니다.
       </p>
 
       <div class="form-group">
-        <label>GitHub 아이디</label>
-        <input type="text" id="ghOwner" placeholder="예: github-username" />
+        <label>GitHub 아이디 (Username)</label>
+        <input type="text" id="ghOwner" placeholder="예: your-github-id" />
       </div>
       <div class="form-group">
-        <label>저장소 이름</label>
+        <label>저장소 이름 (Repo Name)</label>
         <input type="text" id="ghRepo" placeholder="예: reading-list" />
       </div>
       <div class="form-group">
-        <label>Personal Access Token (classic)</label>
+        <label>Personal Access Token</label>
         <input type="password" id="ghToken" placeholder="ghp_xxxxxxxxxxxx" />
       </div>
 
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="closeSyncModal()">닫기</button>
-        <button class="btn btn-save" onclick="saveSyncSettings()">저장 및 연결 테스트</button>
+        <button class="btn btn-save" onclick="saveSyncSettings()">저장 및 동기화</button>
       </div>
     </div>
   </div>
@@ -515,48 +515,22 @@
       { id: '1', title: '총, 균, 쇠', author: '재레드 다이아몬드', page: 752, date: '2026-08-01', note: '인류 문명의 불평등 기원을 밝힌 명저' }
     ];
     let chart = null;
+    let ghFileSha = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
       renderTable();
       initChart();
       updateChart();
-      updateSyncButtonStatus();
-      await loadFromGitHub(); // 진입 시 GitHub 최신 데이터 자동 가져오기
+      await loadFromGitHub(); // 시작 시 GitHub에서 최신 데이터 가져오기
     });
-
-    /* --- UTF-8 Base64 안전 변환 헬퍼 --- */
-    function utf8_to_b64(str) {
-      return window.btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
-    }
-    function b64_to_utf8(str) {
-      return decodeURIComponent(Array.prototype.map.call(window.atob(str), c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-    }
 
     /* --- GitHub 연동 핵심 로직 --- */
     function getGhConfig() {
       return {
-        owner: (localStorage.getItem('gh_owner') || '').trim(),
-        repo: (localStorage.getItem('gh_repo') || '').trim(),
-        token: (localStorage.getItem('gh_token') || '').trim()
+        owner: localStorage.getItem('gh_owner') || '',
+        repo: localStorage.getItem('gh_repo') || '',
+        token: localStorage.getItem('gh_token') || ''
       };
-    }
-
-    function updateSyncButtonStatus(status = '') {
-      const btn = document.getElementById('syncStatusBtn');
-      const { owner, token } = getGhConfig();
-      if (!owner || !token) {
-        btn.textContent = '⚙️ 동기화 미설정';
-        btn.style.color = '#ef4444';
-      } else if (status === 'syncing') {
-        btn.textContent = '🔄 동기화 중...';
-        btn.style.color = 'var(--primary)';
-      } else if (status === 'done') {
-        btn.textContent = '🟢 동기화 완료';
-        btn.style.color = '#10b981';
-      } else {
-        btn.textContent = '🟢 GitHub 동기화됨';
-        btn.style.color = '#10b981';
-      }
     }
 
     function openSyncModal() {
@@ -576,96 +550,66 @@
       const repo = document.getElementById('ghRepo').value.trim();
       const token = document.getElementById('ghToken').value.trim();
 
-      if (!owner || !repo || !token) {
-        alert('아이디, 저장소 이름, 토큰을 모두 입력해주세요.');
-        return;
-      }
-
       localStorage.setItem('gh_owner', owner);
       localStorage.setItem('gh_repo', repo);
       localStorage.setItem('gh_token', token);
 
       closeSyncModal();
-      updateSyncButtonStatus('syncing');
-      
-      const success = await syncToGitHub(true); // 첫 설정 시 현재 로컬 데이터 업로드
-      if (success) {
-        alert('GitHub 저장소와 성공적으로 연결되었습니다!');
-        updateSyncButtonStatus('done');
-      } else {
-        alert('GitHub 연결에 실패했습니다. 토큰 권한(repo 체크 여부)과 저장소 이름을 다시 확인해주세요.');
-        updateSyncButtonStatus();
-      }
+      alert('설정이 저장되었습니다. GitHub와 동기화를 시도합니다.');
+      await loadFromGitHub();
     }
 
-    // GitHub 최신 SHA 조회 함수
-    async function getLatestSha(owner, repo, token) {
-      try {
-        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/books.json?ref=main`, {
-          headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' },
-          cache: 'no-store'
-        });
-        if (res.ok) {
-          const data = await res.json();
-          return data.sha;
-        }
-      } catch (e) {}
-      return null;
-    }
-
-    // GitHub에서 불러오기
+    // GitHub에서 books.json 불러오기
     async function loadFromGitHub() {
       const { owner, repo, token } = getGhConfig();
       if (!owner || !repo || !token) return;
 
       try {
-        updateSyncButtonStatus('syncing');
-        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/books.json?ref=main`, {
-          headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' },
-          cache: 'no-store'
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/books.json`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
         });
 
         if (res.ok) {
           const data = await res.json();
-          const cleanB64 = data.content.replace(/\\n/g, '');
-          const jsonStr = b64_to_utf8(cleanB64);
-          books = JSON.parse(jsonStr);
+          ghFileSha = data.sha;
+          // UTF-8 디코딩
+          const content = decodeURIComponent(escape(atob(data.content)));
+          books = JSON.parse(content);
           localStorage.setItem('my_reading_list', JSON.stringify(books));
           renderTable();
           updateChart();
-          updateSyncButtonStatus('done');
         } else if (res.status === 404) {
-          // 파일이 없으면 초기 생성
+          // 파일이 아직 없으면 새로 생성 저장
           await syncToGitHub();
         }
       } catch (e) {
-        console.error('로드 실패:', e);
-        updateSyncButtonStatus();
+        console.error('GitHub 로드 실패:', e);
       }
     }
 
-    // GitHub로 저장하기 (SHA 충돌 방지 로직 적용)
-    async function syncToGitHub(isInitial = false) {
+    // GitHub의 books.json 파일로 저장하기
+    async function syncToGitHub() {
       const { owner, repo, token } = getGhConfig();
-      if (!owner || !repo || !token) return false;
+      if (!owner || !repo || !token) return;
 
       try {
-        updateSyncButtonStatus('syncing');
-        // 매 저장 시마다 최신 SHA를 먼저 조회하여 충돌(409 Conflict) 완벽 방지
-        const currentSha = await getLatestSha(owner, repo, token);
+        const contentStr = JSON.stringify(books, null, 2);
+        // UTF-8 인코딩 후 base64 변환
+        const contentB64 = btoa(unescape(encodeURIComponent(contentStr)));
 
-        const contentB64 = utf8_to_b64(JSON.stringify(books, null, 2));
         const bodyData = {
-          message: 'Update reading list via Book App',
-          content: contentB64,
-          branch: 'main'
+          message: 'Update reading list via Web App',
+          content: contentB64
         };
-        if (currentSha) bodyData.sha = currentSha;
+        if (ghFileSha) bodyData.sha = ghFileSha;
 
         const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/books.json`, {
           method: 'PUT',
           headers: {
-            'Authorization': `token ${token}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
             'Accept': 'application/vnd.github.v3+json'
           },
@@ -673,27 +617,23 @@
         });
 
         if (res.ok) {
-          updateSyncButtonStatus('done');
-          return true;
-        } else {
-          const errData = await res.json();
-          console.error('GitHub API 에러 응답:', errData);
-          updateSyncButtonStatus();
-          return false;
+          const resData = await res.json();
+          ghFileSha = resData.content.sha;
         }
       } catch (e) {
-        console.error('저장 실패:', e);
-        updateSyncButtonStatus();
-        return false;
+        console.error('GitHub 저장 실패:', e);
       }
     }
 
-    /* --- 도서 검색 --- */
+    /* --- 도서 검색 (프록시 기반) --- */
     async function executeSearch() {
       const inputEl = document.getElementById('searchInput');
       const query = inputEl.value.trim();
       const dropdown = document.getElementById('searchDropdown');
-      if (!query) { openManualAddModal(); return; }
+      if (!query) {
+        openManualAddModal();
+        return;
+      }
 
       dropdown.innerHTML = '<div style="padding: 14px; text-align: center; color: var(--text-sub);">도서 검색 중...</div>';
       dropdown.style.display = 'block';
@@ -811,7 +751,7 @@
       localStorage.setItem('my_reading_list', JSON.stringify(books));
       renderTable();
       updateChart();
-      syncToGitHub();
+      syncToGitHub(); // GitHub 저장소에 자동 커밋
     }
 
     function renderTable() {
